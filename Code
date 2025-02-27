@@ -1,0 +1,61 @@
+import os
+import pandas as pd
+import numpy as np
+import mlflow
+import mlflow.sklearn
+import joblib
+import boto3  # AWS for model storage & deployment
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+# Step 1: Load Data (Simulating a Healthcare Dataset)
+print("Loading healthcare dataset...")
+data = pd.read_csv("healthcare_patient_data.csv")
+X = data.drop(columns=['high_risk_patient'])  # Features
+y = data['high_risk_patient']  # Target
+
+# Step 2: Split Data for Training & Testing
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Step 3: Model Training & Logging with MLflow
+print("Training ML model...")
+mlflow.set_experiment("Healthcare_MLOps")
+with mlflow.start_run():
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    
+    print("Model Accuracy:", acc)
+    mlflow.log_metric("accuracy", acc)
+    mlflow.sklearn.log_model(model, "healthcare_risk_model")
+    joblib.dump(model, "healthcare_model.pkl")
+
+# Step 4: Deploy Model to AWS S3 (or a Model Serving Platform)
+print("Uploading model to AWS S3...")
+s3_client = boto3.client('s3')
+bucket_name = "mlops-healthcare-models"
+s3_client.upload_file("healthcare_model.pkl", bucket_name, "healthcare_model.pkl")
+print("Model uploaded successfully!")
+
+# Step 5: Model Monitoring & Drift Detection (Simulated Check)
+def detect_model_drift(new_data, model):
+    y_new_pred = model.predict(new_data.drop(columns=['high_risk_patient']))
+    drift_detected = np.abs(y_new_pred.mean() - y.mean()) > 0.05  # Example threshold
+    return "Drift Detected" if drift_detected else "No Drift"
+
+# Simulating Model Drift Detection
+print("Checking for model drift...")
+drift_status = detect_model_drift(X_test, model)
+print("Drift Status:", drift_status)
+
+# Step 6: Automating Retraining (if Drift is Detected)
+if drift_status == "Drift Detected":
+    print("Retraining model due to drift...")
+    model.fit(X_train, y_train)
+    joblib.dump(model, "healthcare_model.pkl")
+    print("Model retrained and updated!")
+
+print("MLOps pipeline completed successfully!")
